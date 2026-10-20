@@ -1,0 +1,70 @@
+name: GitImpact Continuous Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  audit-typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-size: '20.x'
+          cache: 'npm'
+
+      - name: Install Monorepo Dependencies
+        run: npm ci
+
+      - name: Execute AST Analyzer Tests
+        run: npm run test --workspace=packages/ast-analyzer
+
+      - name: Lint and Formatting Verification
+        run: npm run lint
+
+  audit-python-engine:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: ankane/pgvector:v0.5.1
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: gitimpact_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python Runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Core Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/api/requirements.txt
+          pip install pytest httpx pytest-asyncio
+
+      - name: Run Engine Unit and Integration Tests
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/gitimpact_test
+          OPENAI_API_KEY: mock-key-for-testing
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          pytest apps/api/tests/
