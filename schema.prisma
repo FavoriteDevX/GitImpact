@@ -1,0 +1,51 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model UserPortfolio {
+  id              String         @id @default(uuid())
+  githubId        String         @unique
+  username        String
+  avatarUrl       String
+  globalImpactScore Float        @default(0.0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  metrics         ImpactMetric[]
+  highlights      CodeHighlight[]
+}
+
+model ImpactMetric {
+  id              String        @id @default(uuid())
+  portfolioId     String
+  portfolio       UserPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  category        MetricType    // OPTIMIZATION, SECURITY, ARCHITECTURE, MAINTAINABILITY
+  metricKey       String        // e.g., "cves_fixed", "ms_execution_saved"
+  metricValue     Float
+  confidenceScore Float         // AI model certainty rating
+  verifiedAt      DateTime      @default(now())
+}
+
+model CodeHighlight {
+  id              String        @id @default(uuid())
+  portfolioId     String
+  portfolio       UserPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  repositoryName  String
+  commitSha       String        @unique
+  summaryTitle    String        // AI generated concise title
+  detailedImpact  String        @db.Text
+  linesAdded      Int
+  linesRemoved    Int
+  complexityDelta Int           // Reduction or addition of cyclomatic complexity
+}
+
+enum MetricType {
+  OPTIMIZATION
+  SECURITY
+  ARCHITECTURE
+  MAINTAINABILITY
+}
