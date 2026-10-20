@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: ankane/pgvector:v0.5.1 # PostgreSQL pre-configured with pgvector extension
+    container_name: gitimpact-postgres
+    environment:
+      POSTGRES_USER: gitimpact_admin
+      POSTGRES_PASSWORD: secure_dev_password
+      POSTGRES_DB: gitimpact_prod
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - gitimpact-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gitimpact_admin -d gitimpact_prod"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: gitimpact-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - gitimpact-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile
+    container_name: gitimpact-api
+    environment:
+      - DATABASE_URL=postgresql://gitimpact_admin:secure_dev_password@postgres:5432/gitimpact_prod?schema=public
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GITHUB_ACCESS_TOKEN=${GITHUB_ACCESS_TOKEN}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gitimpact-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile
+    container_name: gitimpact-background-worker
+    command: python -m apps.api.workers.tasks
+    environment:
+      - DATABASE_URL=postgresql://gitimpact_admin:secure_dev_password@postgres:5432/gitimpact_prod?schema=public
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - gitimpact-network
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  gitimpact-network:
+    driver: bridge
